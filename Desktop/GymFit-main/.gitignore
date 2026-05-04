@@ -3,6 +3,7 @@
 node_modules/
 
 # Build outputs
+web-build/
 dist/
 build/
 .next/
@@ -71,3 +72,4 @@ coverage/
 tmp/
 temp/
 ```
+.vercel

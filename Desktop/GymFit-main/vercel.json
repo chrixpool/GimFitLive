@@ -8,8 +8,20 @@
   "outputDirectory": "web-build",
   "rewrites": [
     {
-      "source": "/((?!_expo|assets|favicon.ico).*)",
-      "destination": "/"
+      "source": "/_expo/(.*)",
+      "destination": "/_expo/$1"
+    },
+    {
+      "source": "/assets/(.*)",
+      "destination": "/assets/$1"
+    },
+    {
+      "source": "/favicon.ico",
+      "destination": "/favicon.ico"
+    },
+    {
+      "source": "/(.*)",
+      "destination": "/index.html"
     }
   ]
 }
