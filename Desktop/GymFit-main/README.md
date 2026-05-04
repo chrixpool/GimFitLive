@@ -18,11 +18,19 @@ This is an [Expo](https://expo.dev) project created with [`create-expo-app`](htt
 
 3. Configure Supabase environment variables
 
-   Create a `.env` file or set the following values in your Vercel project settings:
+   Create a `.env` file or set the following values in your Vercel project settings.
+   The app supports either `EXPO_PUBLIC_*` or `NEXT_PUBLIC_*` names:
 
    ```env
    EXPO_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
    EXPO_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
+   ```
+
+   or
+
+   ```env
+   NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
+   NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
    ```
 
 In the output, you'll find options to open the app in a
