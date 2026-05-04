@@ -110,9 +110,6 @@ export default function Layout() {
     if (!session && !isPublicRoute) {
       // Not authenticated and trying to access protected route
       router.replace('/account');
-    } else if (session && pathname === '/account') {
-      // Authenticated but on account page, redirect to home
-      router.replace('/home');
     }
   }, [session, authChecked, pathname]);
 
