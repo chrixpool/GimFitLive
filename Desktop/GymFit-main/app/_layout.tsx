@@ -1,13 +1,13 @@
 import { Ionicons } from '@expo/vector-icons';
-import { Stack, router, usePathname } from 'expo-router';
-import { useEffect, useState, useCallback } from 'react';
-import { Platform, Pressable, View, ActivityIndicator, StyleSheet } from 'react-native';
 import { injectSpeedInsights } from '@vercel/speed-insights';
+import { Stack, router, usePathname } from 'expo-router';
+import { useCallback, useEffect, useState } from 'react';
+import { ActivityIndicator, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { AppTheme } from '../constants/theme';
-import { supabase } from '../lib/supabase';
 import type { Session } from '@supabase/supabase-js';
+import { AppTheme } from '../constants/theme';
+import { isSupabaseConfigured, supabase } from '../lib/supabase';
 
 const HeaderButton = ({ name, onPress }: { name: keyof typeof Ionicons.glyphMap; onPress: () => void }) => (
   <Pressable
@@ -33,6 +33,24 @@ function AuthLoadingScreen() {
             <View style={styles.loadingBar} />
             <View style={[styles.loadingBar, styles.loadingBarShort]} />
           </View>
+        </View>
+      </View>
+    </SafeAreaView>
+  );
+}
+
+function MissingSupabaseConfigScreen() {
+  return (
+    <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
+      <View style={styles.container}>
+        <View style={styles.loadingCard}>
+          <Text style={styles.errorTitle}>Supabase not configured</Text>
+          <Text style={styles.errorText}>
+            The app needs EXPO_PUBLIC_SUPABASE_URL and EXPO_PUBLIC_SUPABASE_ANON_KEY to run.
+          </Text>
+          <Text style={styles.errorText}>
+            Set those values in your Vercel project settings or local environment.
+          </Text>
         </View>
       </View>
     </SafeAreaView>
@@ -97,6 +115,10 @@ export default function Layout() {
       router.replace('/home');
     }
   }, [session, authChecked, pathname]);
+
+  if (!isSupabaseConfigured) {
+    return <MissingSupabaseConfigScreen />;
+  }
 
   // Show loading screen while checking auth (only for protected routes)
   if (loading && !PUBLIC_ROUTES.includes(pathname)) {
@@ -181,5 +203,17 @@ const styles = StyleSheet.create({
   },
   loadingBarShort: {
     width: 100,
+  },
+  errorTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: AppTheme.colors.text,
+    marginBottom: 12,
+    textAlign: 'center',
+  },
+  errorText: {
+    color: AppTheme.colors.text,
+    textAlign: 'center',
+    lineHeight: 22,
   },
 });
