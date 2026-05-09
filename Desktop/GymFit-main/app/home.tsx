@@ -8,15 +8,17 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import SupportModal, { SupportButton } from '../components/SupportModal';
 import { AppTheme } from '../constants/theme';
 import { getCurrentAccount } from '../lib/accounts';
+import { interpretBehavior } from '../lib/behavior';
+import { generateDailyMissions, getClaimedMissionIds, isDailyBonusClaimed, markDailyBonusClaimed, markMissionClaimed } from '../lib/missions';
 import { getTodayMeals } from '../lib/nutrition';
 import { getNutritionTargets } from '../lib/nutritionEngine';
 import { getResolvedNutritionTargets } from '../lib/nutritionGoals';
 import { getProfile } from '../lib/profile';
 import { getNextTier, getUserXP, TierInfo, TIERS } from '../lib/ranking';
+import { awardBonusXP, awardMissionXP } from '../lib/rewards';
 import { getProgress, getStreak, getWeeklyProgress } from '../lib/tracking';
 import { generatePlan, isTrainingDay } from '../lib/workoutEngine';
-import { MealEntry, NutritionTargets, UserAccount, UserProfile, WeeklyProgress } from '../types/workout';
-
+import { BehaviorOutput, DailyMission, MealEntry, NutritionTargets, UserAccount, UserProfile, WeeklyProgress } from '../types/workout';
 const WEEK_LABELS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
 const colors = AppTheme.colors;
 
@@ -46,6 +48,11 @@ export default function Home() {
   const [meals, setMeals] = useState<MealEntry[]>([]);
   const [targets, setTargets] = useState<NutritionTargets | null>(null);
   const [weekly, setWeekly] = useState<WeeklyProgress | null>(null);
+  const [behavior, setBehavior] = useState<BehaviorOutput | null>(null);
+  const [dailyMissions, setDailyMissions] = useState<DailyMission[]>([]);
+  const [claimedMissionIds, setClaimedMissionIds] = useState<string[]>([]);
+  const [bonusClaimed, setBonusClaimed] = useState(false);
+  const [missionFeedback, setMissionFeedback] = useState('');
   const [loading, setLoading] = useState(true);
   const [totalXP, setTotalXP] = useState(0);
   const [currentTier, setCurrentTier] = useState<TierInfo>(TIERS[0]);
@@ -65,6 +72,12 @@ export default function Home() {
           getProgress(),
         ]);
         const xpData = activeAccount?.id ? await getUserXP(activeAccount.id) : null;
+        const bonusState = await isDailyBonusClaimed();
+        const claimedMissions = await getClaimedMissionIds();
+        const todayCompleted = allProgress.some((entry) => entry.date === new Date().toISOString().slice(0, 10) && entry.completed);
+        const lastWorkoutDaysAgo = allProgress.length === 0
+          ? 7
+          : Math.max(0, Math.ceil((new Date().getTime() - new Date(allProgress[0].date).getTime()) / (1000 * 60 * 60 * 24)));
 
         if (!alive) return;
 
@@ -78,11 +91,15 @@ export default function Home() {
         setStreak(currentStreak);
         setMeals(todayMeals);
         setWeekly(week);
+        setBonusClaimed(bonusState);
+        setClaimedMissionIds(claimedMissions);
 
         if (xpData) {
           setTotalXP(xpData.totalXP);
           setCurrentTier(xpData.currentTier);
         }
+
+        let resolvedTargets: NutritionTargets | null = null;
 
         if (savedProfile) {
           const generatedPlan = generatePlan(parseFloat(savedProfile.bmi), savedProfile.goal, {
@@ -92,14 +109,27 @@ export default function Home() {
             programStartDate: savedProfile.programStartDate,
             progress: allProgress,
           });
-          setTargets(await getResolvedNutritionTargets(getNutritionTargets(parseFloat(savedProfile.bmi), savedProfile.goal, {
+          resolvedTargets = await getResolvedNutritionTargets(getNutritionTargets(parseFloat(savedProfile.bmi), savedProfile.goal, {
             weightKg: Number.parseFloat(savedProfile.weight),
             trainingDay: isTrainingDay(generatedPlan),
             weeklyProgress: week,
-          })));
+          }));
+          setTargets(resolvedTargets);
         } else {
           setTargets(null);
         }
+
+        const behaviorOutput = interpretBehavior({
+          streak: currentStreak,
+          weeklyProgress: week,
+          completedToday: todayCompleted,
+          todayMeals: todayMeals.length,
+          lastWorkoutDaysAgo,
+          lastMealDaysAgo: todayMeals.length === 0 ? 1 : 0,
+        });
+
+        setBehavior(behaviorOutput);
+        setDailyMissions(generateDailyMissions(savedProfile, behaviorOutput, week, todayMeals.length, todayCompleted, currentStreak, resolvedTargets));
         setLoading(false);
       };
 
@@ -110,6 +140,53 @@ export default function Home() {
       };
     }, [])
   );
+
+  const completedMissionCount = dailyMissions.filter((mission) => mission.completed).length;
+  const allMissionsComplete = dailyMissions.length > 0 && completedMissionCount === dailyMissions.length;
+
+  const handleClaimMission = async (mission: DailyMission) => {
+    if (!account || !mission.completed || claimedMissionIds.includes(mission.id)) return;
+    setMissionFeedback('Claiming reward...');
+
+    const success = await awardMissionXP(
+      account.id,
+      mission.rewardXP,
+      `mission_${mission.type}`,
+      `Completed mission: ${mission.title}`,
+      streak,
+      behavior?.state ?? 'steady',
+      `mission:${mission.id}`
+    );
+
+    if (success) {
+      setClaimedMissionIds((items) => [...items, mission.id]);
+      await markMissionClaimed(mission.id);
+      setMissionFeedback(`+${mission.rewardXP} XP earned!`);
+    } else {
+      setMissionFeedback('Unable to claim reward right now.');
+    }
+  };
+
+  const handleClaimBonus = async () => {
+    if (!account || !allMissionsComplete || bonusClaimed) return;
+    setMissionFeedback('Claiming bonus...');
+
+    const success = await awardBonusXP(
+      account.id,
+      streak,
+      behavior?.state ?? 'steady',
+      'Daily mission streak bonus',
+      `daily-bonus:${new Date().toISOString().slice(0, 10)}`
+    );
+
+    if (success) {
+      await markDailyBonusClaimed();
+      setBonusClaimed(true);
+      setMissionFeedback('Daily mission bonus claimed!');
+    } else {
+      setMissionFeedback('Unable to claim bonus right now.');
+    }
+  };
 
   const calories = meals.reduce((sum, meal) => sum + meal.calories, 0);
   const protein = meals.reduce((sum, meal) => sum + meal.protein, 0);
@@ -148,6 +225,63 @@ export default function Home() {
   </TouchableOpacity>
 </View>
         </View>
+
+        {behavior ? (
+          <Animated.View entering={FadeIn.duration(300)} style={[styles.behaviorBanner, { backgroundColor: behavior.visual.accent, borderColor: behavior.visual.color }]}> 
+            <Text style={[styles.behaviorLabel, { color: behavior.visual.color }]}>{behavior.visual.emoji} {behavior.visual.label}</Text>
+            <Text style={styles.behaviorMessage}>{behavior.message}</Text>
+            <Text style={styles.behaviorAction}>{behavior.nextCallToAction}</Text>
+          </Animated.View>
+        ) : null}
+
+        {dailyMissions.length ? (
+          <Animated.View entering={FadeInDown.delay(100).duration(300)} style={styles.missionsCard}>
+            <View style={styles.cardHeader}>
+              <View>
+                <Text style={styles.cardTitle}>Today’s missions</Text>
+                <Text style={styles.cardCopy}>Small, behavior-driven goals that earn XP and keep you moving.</Text>
+              </View>
+              <Text style={styles.missionCount}>{completedMissionCount}/{dailyMissions.length}</Text>
+            </View>
+
+            {dailyMissions.map((mission) => (
+              <View key={mission.id} style={[styles.missionItem, mission.completed && styles.missionItemComplete, mission.isRecovery && styles.missionRecovery]}>
+                <View style={styles.missionTitleRow}>
+                  <Text style={styles.missionTitle}>{mission.title}</Text>
+                  <Text style={styles.missionXP}>+{mission.rewardXP} XP</Text>
+                </View>
+                <Text style={styles.missionDescription}>{mission.description}</Text>
+                <Text style={styles.missionTarget}>{mission.targetDetail}</Text>
+                <View style={styles.missionActions}>
+                  <Pressable
+                    accessibilityRole="button"
+                    onPress={() => router.push(mission.type === 'workout' ? '/plan' : '/nutrition')}
+                    style={[styles.missionButton, mission.completed && styles.missionButtonOutline]}
+                  >
+                    <Text style={[styles.missionButtonText, mission.completed && styles.missionButtonTextOutline]}>{mission.completed ? 'View progress' : mission.actionLabel}</Text>
+                  </Pressable>
+                  {mission.completed ? (
+                    <Pressable
+                      accessibilityRole="button"
+                      disabled={claimedMissionIds.includes(mission.id)}
+                      onPress={() => handleClaimMission(mission)}
+                      style={[styles.claimButton, claimedMissionIds.includes(mission.id) && styles.claimButtonDisabled]}
+                    >
+                      <Text style={styles.claimButtonText}>{claimedMissionIds.includes(mission.id) ? 'Claimed' : 'Claim'}</Text>
+                    </Pressable>
+                  ) : null}
+                </View>
+              </View>
+            ))}
+
+            {allMissionsComplete ? (
+              <Pressable accessibilityRole="button" onPress={handleClaimBonus} style={[styles.bonusButton, bonusClaimed && styles.bonusButtonDisabled]}>
+                <Text style={styles.bonusButtonText}>{bonusClaimed ? 'Bonus claimed' : 'Claim daily bonus'}</Text>
+              </Pressable>
+            ) : null}
+            {missionFeedback ? <Text style={styles.missionFeedback}>{missionFeedback}</Text> : null}
+          </Animated.View>
+        ) : null}
 
         {!profile && !loading ? (
           <Animated.View entering={FadeIn.duration(300)}>
@@ -425,4 +559,31 @@ const styles = StyleSheet.create({
   coachNudgeCopy: { color: colors.muted, fontSize: 12, lineHeight: 18, marginTop: 3 },
   wideButton: { backgroundColor: colors.surface, borderRadius: 16, padding: 16, borderWidth: 1, borderColor: colors.border, flexDirection: 'row', alignItems: 'center', gap: 10 },
   wideButtonText: { color: colors.text, fontSize: 15, fontWeight: '800', flex: 1 },
+  behaviorBanner: { backgroundColor: colors.surface, borderWidth: 1, borderRadius: 18, padding: 18, gap: 10, borderColor: colors.border },
+  behaviorLabel: { fontSize: 14, fontWeight: '800', textTransform: 'uppercase' },
+  behaviorMessage: { color: colors.text, fontSize: 15, lineHeight: 22 },
+  behaviorAction: { color: colors.primary, fontSize: 13, fontWeight: '700' },
+  missionsCard: { backgroundColor: colors.surface, borderRadius: 20, padding: 18, borderWidth: 1, borderColor: colors.border, gap: 16 },
+  missionCount: { color: colors.muted, fontSize: 13, fontWeight: '800' },
+  missionItem: { backgroundColor: colors.background, borderRadius: 16, borderWidth: 1, borderColor: colors.border, padding: 14, gap: 8 },
+  missionItemComplete: { borderColor: colors.success, backgroundColor: `${colors.success}11` },
+  missionRecovery: { borderColor: colors.primary, backgroundColor: `${colors.primary}11` },
+  missionTitleRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  missionTitle: { color: colors.text, fontSize: 15, fontWeight: '800' },
+  missionXP: { color: colors.primary, fontSize: 13, fontWeight: '700' },
+  missionDescription: { color: colors.muted, fontSize: 13, lineHeight: 18 },
+  missionTarget: { color: colors.text, fontSize: 12, fontWeight: '700' },
+  missionActions: { flexDirection: 'row', gap: 10, flexWrap: 'wrap' },
+  missionButton: { backgroundColor: colors.surfaceRaised, borderRadius: 12, paddingVertical: 10, paddingHorizontal: 14, borderWidth: 1, borderColor: colors.border },
+  missionButtonOutline: { backgroundColor: colors.background, borderColor: colors.success },
+  missionButtonText: { color: colors.text, fontSize: 13, fontWeight: '800' },
+  missionButtonTextOutline: { color: colors.success },
+  claimButton: { backgroundColor: colors.primary, borderRadius: 12, paddingVertical: 10, paddingHorizontal: 16, alignItems: 'center', justifyContent: 'center' },
+  claimButtonActive: { opacity: 0.95 },
+  claimButtonDisabled: { backgroundColor: colors.surface, opacity: 0.55 },
+  claimButtonText: { color: colors.text, fontSize: 13, fontWeight: '800' },
+  bonusButton: { backgroundColor: colors.primary, borderRadius: 16, paddingVertical: 14, alignItems: 'center', justifyContent: 'center' },
+  bonusButtonDisabled: { opacity: 0.6 },
+  bonusButtonText: { color: colors.text, fontSize: 14, fontWeight: '800' },
+  missionFeedback: { color: colors.muted, fontSize: 13, marginTop: 8, textAlign: 'center' },
 });

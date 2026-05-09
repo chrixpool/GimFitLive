@@ -159,24 +159,26 @@ export default function Account() {
             </View>
           ) : null}
 
-          <View style={styles.card}>
-            <View style={styles.modeRow}>
-              <ModeButton label="Sign in" active={mode === 'signIn'} onPress={() => setMode('signIn')} />
-              <ModeButton label="Create" active={mode === 'signUp'} onPress={() => setMode('signUp')} />
+          {!currentAccount ? (
+            <View style={styles.card}>
+              <View style={styles.modeRow}>
+                <ModeButton label="Sign in" active={mode === 'signIn'} onPress={() => setMode('signIn')} />
+                <ModeButton label="Create" active={mode === 'signUp'} onPress={() => setMode('signUp')} />
+              </View>
+
+              {mode === 'signUp' ? <Field label="Name" placeholder="Your Name" value={name} onChangeText={setName} /> : null}
+              <Field label="Email" placeholder="you@example.com" value={email} onChangeText={setEmail} keyboardType="email-address" autoCapitalize="none" />
+              <Field label="Password" placeholder="At least 6 characters" value={password} onChangeText={setPassword} secureTextEntry />
+
+              {error ? <Text style={styles.errorText}>{error}</Text> : null}
+              {notice ? <Text style={styles.noticeText}>{notice}</Text> : null}
+
+              <Pressable accessibilityRole="button" disabled={loading} onPress={handleSubmit} style={[styles.primaryButton, loading && styles.buttonDisabled]}>
+                <Ionicons name={mode === 'signUp' ? 'person-add-outline' : 'log-in-outline'} size={20} color={colors.text} />
+                <Text style={styles.primaryButtonText}>{loading ? 'Working...' : mode === 'signUp' ? 'Create account' : 'Sign in'}</Text>
+              </Pressable>
             </View>
-
-            {mode === 'signUp' ? <Field label="Name" placeholder="Your Name" value={name} onChangeText={setName} /> : null}
-            <Field label="Email" placeholder="you@example.com" value={email} onChangeText={setEmail} keyboardType="email-address" autoCapitalize="none" />
-            <Field label="Password" placeholder="At least 6 characters" value={password} onChangeText={setPassword} secureTextEntry />
-
-            {error ? <Text style={styles.errorText}>{error}</Text> : null}
-            {notice ? <Text style={styles.noticeText}>{notice}</Text> : null}
-
-            <Pressable accessibilityRole="button" disabled={loading} onPress={handleSubmit} style={[styles.primaryButton, loading && styles.buttonDisabled]}>
-              <Ionicons name={mode === 'signUp' ? 'person-add-outline' : 'log-in-outline'} size={20} color={colors.text} />
-              <Text style={styles.primaryButtonText}>{loading ? 'Working...' : mode === 'signUp' ? 'Create account' : 'Sign in'}</Text>
-            </Pressable>
-          </View>
+          ) : null}
 
           {/* Support Modal */}
           <SupportModal visible={showSupportModal} onClose={() => setShowSupportModal(false)} />
@@ -231,21 +233,21 @@ function Field({
 const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: colors.background },
   keyboard: { flex: 1 },
-  content: { padding: 20, paddingBottom: 36, gap: 16 },
-  headerRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 },
+  content: { alignSelf: 'center', width: '100%', maxWidth: 720, padding: 20, paddingBottom: 36, gap: 16 },
+  headerRow: { width: '100%', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 },
   pageTitle: { color: colors.text, fontSize: 28, fontWeight: '800' },
-  hero: { backgroundColor: colors.surface, borderRadius: 18, padding: 18, borderWidth: 1, borderColor: colors.border, gap: 12 },
+  hero: { width: '100%', backgroundColor: colors.surface, borderRadius: 18, padding: 18, borderWidth: 1, borderColor: colors.border, gap: 12 },
   heroIcon: { width: 50, height: 50, borderRadius: 25, backgroundColor: colors.primary, alignItems: 'center', justifyContent: 'center' },
   title: { color: colors.text, fontSize: 30, fontWeight: '800', lineHeight: 36 },
   subtitle: { color: colors.muted, fontSize: 14, lineHeight: 21 },
-  card: { backgroundColor: colors.surface, borderRadius: 18, padding: 16, borderWidth: 1, borderColor: colors.border, gap: 12 },
+  card: { width: '100%', backgroundColor: colors.surface, borderRadius: 18, padding: 16, borderWidth: 1, borderColor: colors.border, gap: 12 },
   cardTitle: { color: colors.text, fontSize: 18, fontWeight: '800' },
   modeRow: { flexDirection: 'row', gap: 8, backgroundColor: colors.input, borderRadius: 12, padding: 4 },
   modeButton: { flex: 1, borderRadius: 10, paddingVertical: 10, alignItems: 'center' },
   modeButtonActive: { backgroundColor: colors.primary },
   modeButtonText: { color: colors.muted, fontWeight: '800' },
   modeButtonTextActive: { color: colors.text },
-  fieldWrap: { gap: 6 },
+  fieldWrap: { gap: 6, minWidth: 0 },
   fieldLabel: { color: colors.muted, fontSize: 12, fontWeight: '800' },
   input: { backgroundColor: colors.input, borderRadius: 12, borderWidth: 1, borderColor: colors.border, color: colors.text, paddingHorizontal: 14, paddingVertical: 13, fontSize: 15 },
   errorText: { color: colors.primary, fontSize: 12, fontWeight: '800' },

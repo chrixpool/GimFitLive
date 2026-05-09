@@ -115,7 +115,7 @@ export default function RankScreen() {
             </View>
             
             <View style={styles.progressBarContainer}>
-              <View style={styles.progressBarFill} />
+              <View style={[styles.progressBarFill, { width: `${progress}%` }]} />
             </View>
             
             <View style={styles.progressFooter}>

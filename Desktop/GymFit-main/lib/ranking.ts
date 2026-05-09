@@ -16,6 +16,7 @@ export interface XPActivity {
   xp_amount: number;
   source: string;
   description: string;
+  event_key?: string | null;
   created_at: string;
 }
 
@@ -32,6 +33,11 @@ export const XP_REWARDS = {
   STREAK_DAY: 20,
   NUTRITION_GOAL: 30,
   WEEKLY_CONSISTENCY: 100,
+};
+
+const isMissingEventKeyColumn = (error: { message?: string; details?: string } | null | undefined) => {
+  const text = `${error?.message ?? ''} ${error?.details ?? ''}`.toLowerCase();
+  return text.includes('event_key') || text.includes('column');
 };
 
 export function getCurrentTier(totalXP: number): TierInfo {
@@ -83,20 +89,48 @@ export async function addXP(
   userId: string,
   amount: number,
   source: string,
-  description: string
+  description: string,
+  options: { eventKey?: string } = {}
 ): Promise<boolean> {
+  const eventKey = options.eventKey?.trim();
+  const fallbackDedupKey = eventKey ? `xp_awarded_${userId}_${eventKey}` : '';
+
   try {
-    // Try Supabase first
+    let canUseEventKey = Boolean(eventKey);
+    let existing = eventKey
+      ? await supabase.from('user_xp').select('id').eq('user_id', userId).eq('event_key', eventKey).limit(1)
+      : await supabase
+          .from('user_xp')
+          .select('id')
+          .eq('user_id', userId)
+          .eq('source', source)
+          .eq('description', description)
+          .limit(1);
+
+    if (existing.error && canUseEventKey && isMissingEventKeyColumn(existing.error)) {
+      canUseEventKey = false;
+      existing = await supabase
+        .from('user_xp')
+        .select('id')
+        .eq('user_id', userId)
+        .eq('source', source)
+        .eq('description', description)
+        .limit(1);
+    }
+
+    if (!existing.error && existing.data?.length) return true;
+
+    const payload = {
+      user_id: userId,
+      xp_amount: amount,
+      source,
+      description,
+      ...(canUseEventKey && eventKey ? { event_key: eventKey } : {}),
+    };
+
     const { error } = await supabase
       .from('user_xp')
-      .insert([
-        {
-          user_id: userId,
-          xp_amount: amount,
-          source,
-          description,
-        },
-      ])
+      .insert([payload])
       .select()
       .single();
 
@@ -107,6 +141,11 @@ export async function addXP(
     
     // Fallback to AsyncStorage
     try {
+      if (fallbackDedupKey) {
+        const alreadyAwarded = await AsyncStorage.getItem(fallbackDedupKey);
+        if (alreadyAwarded === '1') return true;
+      }
+
       const key = `xp_log_${userId}`;
       const existingData = await AsyncStorage.getItem(key);
       const xpLog = existingData ? JSON.parse(existingData) : [];
@@ -117,6 +156,7 @@ export async function addXP(
         xp_amount: amount,
         source,
         description,
+        event_key: eventKey ?? null,
         created_at: new Date().toISOString(),
       };
       
@@ -128,6 +168,7 @@ export async function addXP(
       const existingTotal = await AsyncStorage.getItem(totalKey);
       const newTotal = (existingTotal ? parseInt(existingTotal) : 0) + amount;
       await AsyncStorage.setItem(totalKey, newTotal.toString());
+      if (fallbackDedupKey) await AsyncStorage.setItem(fallbackDedupKey, '1');
       
       return true;
     } catch (storageError) {
@@ -193,10 +234,12 @@ export async function initializeXPTable() {
       xp_amount INTEGER NOT NULL,
       source TEXT NOT NULL,
       description TEXT,
+      event_key TEXT,
       created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
     );
     
     CREATE INDEX idx_user_xp_user_id ON user_xp(user_id);
     CREATE INDEX idx_user_xp_created_at ON user_xp(created_at);
+    CREATE UNIQUE INDEX idx_user_xp_event_key ON user_xp(user_id, event_key) WHERE event_key IS NOT NULL;
   `);
 }

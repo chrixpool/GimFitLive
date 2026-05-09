@@ -48,10 +48,13 @@ export default function SupportModal({ visible, onClose }: SupportModalProps) {
 
   const handleSendTip = () => {
     setSupportType('tip');
-    // In production, integrate payment gateway here
-    alert('Thank you for your support! Payment integration coming soon. 💙');
-    setSupportType(null);
-    onClose();
+    setCompleted(true);
+
+    setTimeout(() => {
+      setCompleted(false);
+      setSupportType(null);
+      onClose();
+    }, 1500);
   };
 
   return (
@@ -77,15 +80,15 @@ export default function SupportModal({ visible, onClose }: SupportModalProps) {
             >
               <Ionicons name="heart" size={32} color="#fff" />
             </LinearGradient>
-            <Text style={styles.title}>Support the App ❤️</Text>
+            <Text style={styles.title}>Support Gym Tunisia</Text>
             <Text style={styles.subtitle}>
-              Keep Gym Tunisia free and ad-free!
+              Help keep the app improving with optional support.
             </Text>
           </View>
 
           {!supportType ? (
             <Animated.View entering={SlideInDown.duration(400)} style={styles.options}>
-              {/* Watch Ad Option */}
+              {/* Watch sponsor option */}
               <TouchableOpacity
                 style={styles.optionCard}
                 onPress={handleWatchAd}
@@ -95,9 +98,9 @@ export default function SupportModal({ visible, onClose }: SupportModalProps) {
                   <Ionicons name="play-circle" size={32} color={colors.primary} />
                 </View>
                 <View style={styles.optionContent}>
-                  <Text style={styles.optionTitle}>Watch a Short Ad</Text>
+                  <Text style={styles.optionTitle}>Watch a sponsor clip</Text>
                   <Text style={styles.optionDescription}>
-                    Support us by watching a 30-second ad
+                    Support development with a short optional video
                   </Text>
                 </View>
                 <Ionicons name="chevron-forward" size={24} color={colors.textLight} />
@@ -115,7 +118,7 @@ export default function SupportModal({ visible, onClose }: SupportModalProps) {
                 <View style={styles.optionContent}>
                   <Text style={styles.optionTitle}>Send a Tip</Text>
                   <Text style={styles.optionDescription}>
-                    Support development with a one-time tip
+                    Tip support is coming soon
                   </Text>
                 </View>
                 <Ionicons name="chevron-forward" size={24} color={colors.textLight} />
@@ -136,8 +139,8 @@ export default function SupportModal({ visible, onClose }: SupportModalProps) {
                 </>
               ) : completed ? (
                 <>
-                  <Ionicons name="checkmark-circle" size={80} color={colors.success} />
-                  <Text style={styles.completedText}>Thank you for your support! 🎉</Text>
+                  <Ionicons name={supportType === 'tip' ? 'time-outline' : 'checkmark-circle'} size={80} color={supportType === 'tip' ? colors.info : colors.success} />
+                  <Text style={styles.completedText}>{supportType === 'tip' ? 'Tip support is coming soon.' : 'Thank you for your support!'}</Text>
                 </>
               ) : null}
             </Animated.View>
@@ -196,11 +199,13 @@ const styles = StyleSheet.create({
     padding: 20,
   },
   container: {
-    backgroundColor: colors.background,
-    borderRadius: 24,
+    backgroundColor: colors.surface,
+    borderRadius: 18,
     padding: 24,
     width: '100%',
     maxWidth: 400,
+    borderWidth: 1,
+    borderColor: colors.border,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 10 },
     shadowOpacity: 0.3,
@@ -242,10 +247,12 @@ const styles = StyleSheet.create({
   optionCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: colors.card,
-    borderRadius: 16,
+    backgroundColor: colors.input,
+    borderRadius: 14,
     padding: 16,
     gap: 16,
+    borderWidth: 1,
+    borderColor: colors.border,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
@@ -256,7 +263,7 @@ const styles = StyleSheet.create({
     width: 56,
     height: 56,
     borderRadius: 28,
-    backgroundColor: colors.background,
+    backgroundColor: colors.surfaceRaised,
     justifyContent: 'center',
     alignItems: 'center',
   },

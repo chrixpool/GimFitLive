@@ -1,17 +1,20 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from 'expo-router';
 import { useCallback, useState } from 'react';
-import { Image, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import type { KeyboardTypeOptions } from 'react-native';
+import { Image, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 
 import { AppTheme } from '../constants/theme';
 import { filterMealsByCategory, filterMealsByOrigin, getBudgetMealIdeas, getInternationalMealIdeas, MEAL_CATEGORY_LABELS, MEAL_TEMPLATES, MealCategory, MealTemplate } from '../data/meals';
+import { getCurrentUser } from '../lib/auth';
+import { toDateKey } from '../lib/date';
 import { FoodLookupResult, lookupFoodNutrition } from '../lib/foodLookup';
 import { addMeal, addQuickMeal, deleteMeal, getTodayMeals, updateMeal } from '../lib/nutrition';
 import { getNutritionStrategy, getNutritionTargets } from '../lib/nutritionEngine';
 import { clearNutritionTargetOverrides, getResolvedNutritionTargets, saveNutritionTargetOverrides } from '../lib/nutritionGoals';
 import { getProfile } from '../lib/profile';
-import { getProgress, getWeeklyProgress } from '../lib/tracking';
+import { awardNutritionLogXP } from '../lib/rewards';
+import { getProgress, getStreak, getWeeklyProgress } from '../lib/tracking';
 import { generatePlan, isTrainingDay } from '../lib/workoutEngine';
 import { MealEntry, MealType, NutritionTargets } from '../types/workout';
 
@@ -124,6 +127,20 @@ export default function Nutrition() {
     }
 
     resetForm();
+
+    if (!editingId) {
+      try {
+        const account = await getCurrentUser();
+        if (account) {
+          const today = toDateKey();
+          const streakLength = await getStreak();
+          await awardNutritionLogXP(account.id, streakLength, `nutrition:${today}`, `Logged nutrition on ${today}`);
+        }
+      } catch {
+        // best effort only
+      }
+    }
+
     load();
   };
 
