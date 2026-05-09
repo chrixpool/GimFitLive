@@ -1,5 +1,6 @@
 import { CompletedDay, Day, EquipmentAccess, ExperienceLevel, Goal, WeeklyPlan } from '../types/workout';
 import { getCurrentProgramWeek } from './program';
+import { rotateExerciseIfNeeded } from './variationEngine';
 
 const BASE_DAYS: Record<Goal, Day[]> = {
   'lose weight': [
@@ -249,17 +250,21 @@ const adaptExerciseName = (name: string, equipmentAccess: EquipmentAccess) => {
   return HOME_EXERCISES[name] ?? name;
 };
 
-const adaptSchedule = (schedule: Day[], options: Required<Pick<GeneratePlanOptions, 'experienceLevel' | 'equipmentAccess'>>, setBoost: number, restDelta: number) => {
+const adaptSchedule = (schedule: Day[], options: Required<Pick<GeneratePlanOptions, 'experienceLevel' | 'equipmentAccess'>>, setBoost: number, restDelta: number, progress: CompletedDay[] = []) => {
   return schedule.map((day) => ({
     ...day,
     day: day.day,
     durationMinutes: Math.max(25, day.durationMinutes + setBoost * 4),
-    exercises: day.exercises.map((exercise) => ({
-      ...exercise,
-      name: adaptExerciseName(exercise.name, options.equipmentAccess),
-      sets: Math.max(2, exercise.sets + setBoost),
-      restSeconds: Math.max(30, exercise.restSeconds + restDelta),
-    })),
+    exercises: day.exercises.map((exercise) => {
+      const adapted = {
+        ...exercise,
+        name: adaptExerciseName(exercise.name, options.equipmentAccess),
+        sets: Math.max(2, exercise.sets + setBoost),
+        restSeconds: Math.max(30, exercise.restSeconds + restDelta),
+      };
+
+      return rotateExerciseIfNeeded(adapted, progress, options.equipmentAccess);
+    }),
   }));
 };
 
@@ -276,7 +281,7 @@ export const generatePlan = (bmi: number, goal: Goal, options: GeneratePlanOptio
   const currentWeek = getCurrentProgramWeek(options.programStartDate);
   const latestFeedback = getLatestFeedback(options.progress);
   const { setBoost, restDelta, intensityNote } = getProgression(currentWeek, experienceLevel, latestFeedback);
-  const schedule = adaptSchedule(baseSchedule.slice(0, daysPerWeek), { experienceLevel, equipmentAccess }, setBoost, restDelta);
+  const schedule = adaptSchedule(baseSchedule.slice(0, daysPerWeek), { experienceLevel, equipmentAccess }, setBoost, restDelta, options.progress);
   const level = getLevel(Number.isFinite(bmi) ? bmi : 22, experienceLevel);
 
   return {

@@ -9,10 +9,13 @@ import { getWeightEntries, saveWeightEntry } from '../lib/bodyMetrics';
 import { getMeals } from '../lib/nutrition';
 import { getNutritionTargets } from '../lib/nutritionEngine';
 import { getResolvedNutritionTargets } from '../lib/nutritionGoals';
+import { getPersonalRecordTimeline } from '../lib/personalRecords';
 import { getProfile } from '../lib/profile';
+import { getWorkoutSessionHistory, WorkoutSessionHistoryItem } from '../lib/setTracking';
 import { getProgress, getStreak, getWeeklyProgress } from '../lib/tracking';
+import { getVolumeComparison } from '../lib/workoutAnalytics';
 import { generatePlan, isTrainingDay } from '../lib/workoutEngine';
-import { CompletedDay, HabitStreaks, NutritionDay, NutritionTargets, WeeklyProgress, WeightEntry } from '../types/workout';
+import { CompletedDay, HabitStreaks, NutritionDay, NutritionTargets, PersonalRecord, WeeklyProgress, WeightEntry } from '../types/workout';
 
 const colors = AppTheme.colors;
 
@@ -27,15 +30,19 @@ export default function Progress() {
   const [weightDraft, setWeightDraft] = useState('');
   const [weightError, setWeightError] = useState('');
   const [plannedDays, setPlannedDays] = useState(3);
+  const [sessions, setSessions] = useState<WorkoutSessionHistoryItem[]>([]);
+  const [prs, setPrs] = useState<PersonalRecord[]>([]);
 
   const load = useCallback(async () => {
-    const [savedProgress, week, currentStreak, meals, weights, profile] = await Promise.all([
+    const [savedProgress, week, currentStreak, meals, weights, profile, sessionHistory, prTimeline] = await Promise.all([
       getProgress(),
       getWeeklyProgress(),
       getStreak(),
       getMeals(),
       getWeightEntries(12),
       getProfile(),
+      getWorkoutSessionHistory(12),
+      getPersonalRecordTimeline(8),
     ]);
 
     const dateKeys = getRecentDateKeys(7);
@@ -74,6 +81,8 @@ export default function Progress() {
     setHabitStreaks(getHabitStreaks(savedProgress, nutritionHistory, resolvedTargets));
     setWeightEntries(weights);
     setPlannedDays(planDays);
+    setSessions(sessionHistory);
+    setPrs(prTimeline);
   }, []);
 
   useFocusEffect(
@@ -86,6 +95,21 @@ export default function Progress() {
   const totalExercises = progress.reduce((sum, day) => sum + day.exercises.length, 0);
   const doneExercises = progress.reduce((sum, day) => sum + day.exercises.filter((exercise) => exercise.done).length, 0);
   const consistencyPercent = useMemo(() => getWeeklyConsistencyPercent(progress, plannedDays), [plannedDays, progress]);
+  const totalTrackedVolume = sessions.reduce((sum, session) => sum + session.totalVolume, 0);
+  const bestSession = sessions.reduce<WorkoutSessionHistoryItem | null>((best, session) => (!best || session.totalVolume > best.totalVolume ? session : best), null);
+  const intensityScore = sessions.length ? Math.min(100, Math.round(sessions.slice(0, 4).reduce((sum, session) => sum + session.totalSets * 4 + session.totalReps / 8, 0) / Math.min(4, sessions.length))) : 0;
+  const muscleFrequency = useMemo(() => {
+    const counts = progress.slice(0, 10).flatMap((day) => day.exercises.map((exercise) => exercise.name.toLowerCase())).reduce<Record<string, number>>((acc, name) => {
+      const group = name.includes('squat') || name.includes('leg') || name.includes('lunge') ? 'Legs'
+        : name.includes('row') || name.includes('pull') || name.includes('deadlift') ? 'Pull'
+          : name.includes('press') || name.includes('push') || name.includes('fly') ? 'Push'
+            : name.includes('plank') ? 'Core'
+              : 'Other';
+      acc[group] = (acc[group] ?? 0) + 1;
+      return acc;
+    }, {});
+    return ['Push', 'Pull', 'Legs', 'Core'].map((group) => ({ group, count: counts[group] ?? 0 }));
+  }, [progress]);
 
   const handleSaveWeight = async () => {
     const parsed = Number.parseFloat(weightDraft);
@@ -118,6 +142,64 @@ export default function Progress() {
           <Metric label="Consist." value={`${consistencyPercent}%`} color={colors.info} />
           <Metric label="Done" value={`${doneExercises}/${totalExercises}`} color={colors.warning} />
         </View>
+      </View>
+
+      <View style={styles.card}>
+        <View style={styles.cardHeader}>
+          <View style={styles.cardHeaderText}>
+            <Text style={styles.cardTitle}>Strength command center</Text>
+            <Text style={styles.cardCopy}>{sessions.length ? `${sessions.length} advanced sessions tracked. Best day: ${bestSession?.totalVolume.toLocaleString()} kg.` : 'Finish an advanced workout to unlock set-level trends.'}</Text>
+          </View>
+          <Text style={styles.badge}>{intensityScore}% intensity</Text>
+        </View>
+        <View style={styles.metricRow}>
+          <Metric label="Volume" value={`${Math.round(totalTrackedVolume).toLocaleString()}`} color={colors.success} />
+          <Metric label="PRs" value={`${prs.length}`} color={colors.gold} />
+          <Metric label="Compare" value={totalTrackedVolume ? getVolumeComparison(totalTrackedVolume).split(' ')[0] : '-'} color={colors.violet} />
+        </View>
+        <SessionVolumeChart sessions={sessions} />
+      </View>
+
+      <View style={styles.card}>
+        <View style={styles.cardHeader}>
+          <View style={styles.cardHeaderText}>
+            <Text style={styles.cardTitle}>Muscle frequency</Text>
+            <Text style={styles.cardCopy}>Recent training balance across major patterns.</Text>
+          </View>
+          <Text style={styles.badge}>heatmap</Text>
+        </View>
+        <View style={styles.heatmapRow}>
+          {muscleFrequency.map((item) => (
+            <View key={item.group} style={[styles.heatmapCell, item.count >= 3 && styles.heatmapHot, item.count === 0 && styles.heatmapCold]}>
+              <Text style={styles.heatmapValue}>{item.count}</Text>
+              <Text style={styles.heatmapLabel}>{item.group}</Text>
+            </View>
+          ))}
+        </View>
+      </View>
+
+      <View style={styles.card}>
+        <View style={styles.cardHeader}>
+          <View style={styles.cardHeaderText}>
+            <Text style={styles.cardTitle}>Personal records timeline</Text>
+            <Text style={styles.cardCopy}>{prs.length ? 'Latest strength peaks from logged sets.' : 'PRs appear here after advanced workouts.'}</Text>
+          </View>
+          <Text style={styles.badge}>{prs.length}</Text>
+        </View>
+        {prs.length ? prs.map((record) => (
+          <View key={record.id} style={styles.prRow}>
+            <Ionicons name="sparkles-outline" size={17} color={colors.gold} />
+            <View style={styles.prTextWrap}>
+              <Text style={styles.prTitle}>{record.exerciseName}</Text>
+              <Text style={styles.prCopy}>{record.type.replace('_', ' ')} | {Math.round(record.value)} | {record.achievedAt.slice(0, 10)}</Text>
+            </View>
+          </View>
+        )) : (
+          <View style={styles.chartEmpty}>
+            <Ionicons name="sparkles-outline" size={24} color={colors.subtle} />
+            <Text style={styles.emptyText}>No PRs yet.</Text>
+          </View>
+        )}
       </View>
 
       <View style={styles.card}>
@@ -297,6 +379,37 @@ function CaloriesChart({ days, target }: { days: NutritionDay[]; target: number 
   );
 }
 
+function SessionVolumeChart({ sessions }: { sessions: WorkoutSessionHistoryItem[] }) {
+  if (sessions.length === 0) {
+    return (
+      <View style={styles.chartEmpty}>
+        <Ionicons name="bar-chart-outline" size={24} color={colors.subtle} />
+        <Text style={styles.emptyText}>No advanced sessions yet.</Text>
+      </View>
+    );
+  }
+
+  const ordered = [...sessions].reverse();
+  const maxVolume = Math.max(1, ...ordered.map((session) => session.totalVolume));
+
+  return (
+    <View style={styles.sessionChart}>
+      {ordered.map((session) => {
+        const percent = Math.max(4, (session.totalVolume / maxVolume) * 100);
+        return (
+          <View key={session.id} style={styles.sessionColumn}>
+            <View style={styles.sessionRail}>
+              <View style={[styles.sessionBar, { height: `${percent}%` }]} />
+            </View>
+            <Text style={styles.chartValue}>{Math.round(session.totalVolume / 100) / 10}k</Text>
+            <Text style={styles.chartLabel}>{session.completedAt?.slice(5, 10) ?? '--'}</Text>
+          </View>
+        );
+      })}
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.background },
   content: { padding: 20, paddingBottom: 36, gap: 16 },
@@ -336,8 +449,22 @@ const styles = StyleSheet.create({
   calorieColumn: { flex: 1, alignItems: 'center', gap: 5 },
   calorieRail: { height: 118, width: '100%', backgroundColor: colors.input, borderRadius: 10, justifyContent: 'flex-end', overflow: 'hidden' },
   calorieBar: { width: '100%', minHeight: 3, borderRadius: 10 },
+  sessionChart: { height: 176, flexDirection: 'row', alignItems: 'flex-end', gap: 8 },
+  sessionColumn: { flex: 1, alignItems: 'center', gap: 5 },
+  sessionRail: { height: 118, width: '100%', backgroundColor: colors.input, borderRadius: 10, justifyContent: 'flex-end', overflow: 'hidden' },
+  sessionBar: { width: '100%', minHeight: 3, borderRadius: 10, backgroundColor: colors.success },
   chartValue: { color: colors.text, fontSize: 11, fontWeight: '800' },
   chartLabel: { color: colors.subtle, fontSize: 10, fontWeight: '700' },
+  heatmapRow: { flexDirection: 'row', gap: 8 },
+  heatmapCell: { flex: 1, minHeight: 82, backgroundColor: `${colors.info}18`, borderRadius: 12, borderWidth: 1, borderColor: `${colors.info}44`, alignItems: 'center', justifyContent: 'center', gap: 4 },
+  heatmapHot: { backgroundColor: `${colors.success}22`, borderColor: `${colors.success}66` },
+  heatmapCold: { backgroundColor: colors.input, borderColor: colors.border },
+  heatmapValue: { color: colors.text, fontSize: 24, fontWeight: '900' },
+  heatmapLabel: { color: colors.muted, fontSize: 11, fontWeight: '800' },
+  prRow: { flexDirection: 'row', gap: 10, alignItems: 'center', backgroundColor: colors.input, borderRadius: 12, borderWidth: 1, borderColor: colors.border, padding: 12 },
+  prTextWrap: { flex: 1, minWidth: 0 },
+  prTitle: { color: colors.text, fontSize: 14, fontWeight: '900' },
+  prCopy: { color: colors.muted, fontSize: 12, marginTop: 2, textTransform: 'capitalize' },
   emptyCard: { backgroundColor: colors.surface, borderRadius: 18, padding: 22, borderWidth: 1, borderColor: colors.border, alignItems: 'center', gap: 10 },
   emptyTitle: { color: colors.text, fontSize: 18, fontWeight: '800' },
   emptyCopy: { color: colors.muted, textAlign: 'center', lineHeight: 20 },
