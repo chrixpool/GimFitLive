@@ -1,0 +1,6 @@
+{
+  "private": true,
+  "scripts": {
+    "vercel-build": "npm --prefix Desktop/GymFit-main ci && npm --prefix Desktop/GymFit-main run vercel-build"
+  }
+}
